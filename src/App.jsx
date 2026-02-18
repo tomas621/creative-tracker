@@ -1,6 +1,5 @@
 
-import { useState, useMemo } from "react";
-import ReactDOM from "react-dom/client";
+const { useState, useMemo } = React;
 
 const AWARENESS_STAGES = ["Unaware", "Problem Aware", "Solution Aware", "Product Aware", "Most Aware"];
 const FORMATS = ["Video", "Static", "UGC", "Carousel", "Story/Reel", "Long-form"];
