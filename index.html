@@ -12,7 +12,7 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useMemo, useEffect, useCallback } = React;
+    const { useState, useMemo, useEffect, useCallback, useRef } = React;
 
     const AWARENESS_STAGES = ["Unaware","Problem Aware","Solution Aware","Product Aware","Most Aware"];
     const FORMATS = ["Video","Static","UGC","Carousel","Story/Reel","Long-form"];
@@ -22,23 +22,55 @@
     const STATUS_COLORS = { Planned:"bg-gray-100 text-gray-600","In Briefing":"bg-yellow-100 text-yellow-700",Live:"bg-blue-100 text-blue-700",Paused:"bg-orange-100 text-orange-700",Winner:"bg-green-100 text-green-700",Killed:"bg-red-100 text-red-600" };
     const AWARENESS_COLORS = { Unaware:"bg-purple-100 text-purple-700","Problem Aware":"bg-pink-100 text-pink-700","Solution Aware":"bg-blue-100 text-blue-700","Product Aware":"bg-teal-100 text-teal-700","Most Aware":"bg-green-100 text-green-700" };
 
+    const METRIC_FIELDS = [
+      {key:"adName",label:"Ad Name",required:true},
+      {key:"spend",label:"Spend (£/$)"},
+      {key:"impressions",label:"Impressions"},
+      {key:"reach",label:"Reach"},
+      {key:"clicks",label:"Clicks"},
+      {key:"ctr",label:"CTR (%)"},
+      {key:"cpc",label:"CPC (£/$)"},
+      {key:"cpm",label:"CPM (£/$)"},
+      {key:"purchases",label:"Purchases"},
+      {key:"roas",label:"ROAS"},
+      {key:"cpa",label:"CPA (£/$)"},
+      {key:"thumbstopRate",label:"Thumbstop Rate (%)"},
+      {key:"hookRate",label:"Hook Rate (%)"},
+      {key:"videoView25",label:"Video Views 25%"},
+      {key:"videoView50",label:"Video Views 50%"},
+      {key:"videoView75",label:"Video Views 75%"},
+      {key:"videoView95",label:"Video Views 95%"},
+      {key:"videoView100",label:"Video Views 100%"},
+      {key:"avgPlayTime",label:"Avg Play Time (s)"},
+      {key:"outboundCTR",label:"Outbound CTR (%)"},
+      {key:"addToCart",label:"Add to Cart"},
+      {key:"initCheckout",label:"Initiate Checkout"},
+      {key:"frequency",label:"Frequency"},
+    ];
+
     const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
-    const TABS = ["Test Tracker","Brief Builder","Angle Library","Persona Library"];
+    const TABS = ["Test Tracker","Brief Builder","Creative Analysis","Angle Library","Persona Library","Awareness Guide"];
+
+    const AWARENESS_GUIDE = [
+      { stage:"Unaware", color:"bg-purple-100 text-purple-700", border:"border-purple-200", icon:"😴", definition:"The audience has no idea they have a problem or that your product exists.", goal:"Interrupt and educate. Make them feel seen by naming a pain they haven't articulated yet.", examples:["'Most people don't realise their cheap knives are costing them 20 mins every meal prep...'","Pattern-interrupt hooks, bold statements, relatable frustrations"], metrics:"Thumbstop rate, 3-sec video views, scroll-stop", tipColor:"text-purple-600" },
+      { stage:"Problem Aware", color:"bg-pink-100 text-pink-700", border:"border-pink-200", icon:"🤔", definition:"They know they have a problem but don't know there's a solution — or haven't found the right one.", goal:"Validate the pain deeply. Show you understand their frustration better than they do.", examples:["'Tired of knives that go blunt after a month?'","Agitate the problem, speak to the emotion, don't sell yet"], metrics:"Hook rate, video retention, comments", tipColor:"text-pink-600" },
+      { stage:"Solution Aware", color:"bg-blue-100 text-blue-700", border:"border-blue-200", icon:"💡", definition:"They know solutions exist but haven't decided on a category or approach yet.", goal:"Educate on why your solution type is best. Position against alternatives.", examples:["'Why artisan-crafted knives outlast mass-produced ones by 10x'","Comparison content, educational, 'why X vs Y' angles"], metrics:"CTR, watch time, outbound clicks", tipColor:"text-blue-600" },
+      { stage:"Product Aware", color:"bg-teal-100 text-teal-700", border:"border-teal-200", icon:"🔍", definition:"They know your product exists but haven't committed. They're comparing, hesitating, or need a nudge.", goal:"Overcome objections, build trust, reduce risk. Give them a reason to choose you now.", examples:["Social proof, reviews, guarantees, limited time offers","'Free sharpening for life. 100-day trial. No risk.'"], metrics:"CTR, add to cart, CPA", tipColor:"text-teal-600" },
+      { stage:"Most Aware", color:"bg-green-100 text-green-700", border:"border-green-200", icon:"✅", definition:"They know your brand well and are close to buying — or have bought before. They just need the right trigger.", goal:"Convert with urgency, reward loyalty, or upsell. Keep it direct and offer-led.", examples:["Retargeting ads, abandoned cart, loyalty offers, seasonal promos","'Welcome back — your knife is waiting'"], metrics:"ROAS, CPA, conversion rate, repeat purchase", tipColor:"text-green-600" },
+    ];
     const STORAGE_KEY = "ctt_data_v2";
 
-    const loadStorage = () => {
-      try { return JSON.parse(window.localStorage.getItem(STORAGE_KEY)) || {}; }
-      catch { return {}; }
-    };
-    const saveStorage = data => {
-      try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
-    };
+    const loadStorage = () => { try { return JSON.parse(window.localStorage.getItem(STORAGE_KEY))||{}; } catch { return {}; } };
+    const saveStorage = data => { try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {} };
 
-    async function callClaude(prompt, apiKey) {
+    async function callClaude(prompt, apiKey, imageBase64=null, imageMime=null) {
+      const content = imageBase64
+        ? [{type:"image",source:{type:"base64",media_type:imageMime,data:imageBase64}},{type:"text",text:prompt}]
+        : prompt;
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST",
         headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:prompt}]})
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:3000,messages:[{role:"user",content}]})
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error.message);
@@ -57,6 +89,40 @@
       return JSON.parse(text.replace(/```json|```/g,"").trim());
     }
 
+    async function analyseCreative({metrics, brandContext, imageBase64, imageMime, apiKey}) {
+      const metricsSummary = Object.entries(metrics).filter(([k,v])=>v&&k!=="adName").map(([k,v])=>{
+        const field = METRIC_FIELDS.find(f=>f.key===k);
+        return `${field?.label||k}: ${v}`;
+      }).join("\n");
+
+      const prompt = `You are a senior DTC paid social strategist. Analyse this ad creative and its performance data.
+
+Brand Context: ${brandContext||"Not provided"}
+Ad Name: ${metrics.adName||"Unknown"}
+
+PERFORMANCE METRICS:
+${metricsSummary||"No metrics provided"}
+
+${imageBase64?"An image of the creative has been provided for visual analysis.":"No creative image provided — analyse based on metrics only."}
+
+Return ONLY a JSON object (no markdown, no backticks):
+{
+  "overallScore": "number 1-10",
+  "summary": "2-3 sentence executive summary of this ad's performance",
+  "strengths": [{"title":"strength title","detail":"1-2 sentence explanation"}],
+  "weaknesses": [{"title":"weakness title","detail":"1-2 sentence explanation"}],
+  "iterations": [{"title":"iteration idea","detail":"specific change to test and why","priority":"High/Medium/Low"}],
+  "newAngles": [{"title":"new angle","hook":"emotional hook","rationale":"why based on the data"}],
+  "creativeNotes": "if image provided, 2-3 sentences on visual strengths/weaknesses. If not, leave empty."
+}
+
+Provide 3-5 strengths, 3-5 weaknesses, 4-6 iterations, 2-3 new angles.`;
+
+      const text = await callClaude(prompt, apiKey, imageBase64, imageMime);
+      return JSON.parse(text.replace(/```json|```/g,"").trim());
+    }
+
+    // ── UI helpers ───────────────────────────────────────────────────────────
     const Pill = ({label,colorClass}) => <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${colorClass}`}>{label}</span>;
     const Field = ({label,children}) => <div className="space-y-1"><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</label>{children}</div>;
     const Input = ({value,onChange,placeholder,className="",type="text"}) => <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} className={`w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 ${className}`}/>;
@@ -66,7 +132,7 @@
     const Modal = ({show,onClose,title,children,wide}) => {
       if (!show) return null;
       return <div className="fixed inset-0 bg-black bg-opacity-40 flex items-start justify-center z-50 p-4 overflow-y-auto">
-        <div className={`bg-white rounded-2xl shadow-2xl w-full my-6 ${wide?"max-w-2xl":"max-w-lg"}`}>
+        <div className={`bg-white rounded-2xl shadow-2xl w-full my-6 ${wide?"max-w-3xl":"max-w-lg"}`}>
           <div className="flex items-center justify-between p-5 border-b border-gray-100">
             <h3 className="font-semibold text-gray-800 text-lg">{title}</h3>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
@@ -90,6 +156,238 @@
       </div>;
     };
 
+    // ── Creative Analysis Tab ────────────────────────────────────────────────
+    function CreativeAnalysisTab({client, apiKey}) {
+      const [inputMode, setInputMode] = useState("manual"); // manual | paste | csv
+      const [metrics, setMetrics] = useState({adName:""});
+      const [pasteText, setPasteText] = useState("");
+      const [imageBase64, setImageBase64] = useState(null);
+      const [imageMime, setImageMime] = useState(null);
+      const [imagePreview, setImagePreview] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [result, setResult] = useState(null);
+      const [error, setError] = useState("");
+      const [savedAnalyses, setSavedAnalyses] = useState(client?.analyses||[]);
+      const [viewingAnalysis, setViewingAnalysis] = useState(null);
+      const fileRef = useRef();
+      const imgRef = useRef();
+
+      const setMetric = (key,val) => setMetrics(m=>({...m,[key]:val}));
+
+      const handleImageUpload = e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const base64 = ev.target.result.split(",")[1];
+          setImageBase64(base64);
+          setImageMime(file.type);
+          setImagePreview(ev.target.result);
+        };
+        reader.readAsDataURL(file);
+      };
+
+      const parseCSVOrPaste = text => {
+        const lines = text.trim().split("\n").filter(Boolean);
+        if (lines.length < 2) return null;
+        const headers = lines[0].split(",").map(h=>h.trim().replace(/"/g,"").toLowerCase());
+        const values = lines[1].split(",").map(v=>v.trim().replace(/"/g,""));
+        const mapped = {};
+        const headerMap = {
+          "ad name":"adName","campaign name":"adName","name":"adName",
+          "amount spent":"spend","spend":"spend",
+          "impressions":"impressions","reach":"reach","clicks":"clicks",
+          "ctr (all)":"ctr","ctr":"ctr","link click-through rate":"ctr",
+          "cpc (all)":"cpc","cpc":"cpc",
+          "cpm":"cpm","cost per 1,000 impressions":"cpm",
+          "purchases":"purchases","results":"purchases",
+          "purchase roas":"roas","roas":"roas","website purchase roas":"roas",
+          "cost per purchase":"cpa","cpa":"cpa",
+          "video plays at 25%":"videoView25","video plays at 50%":"videoView50",
+          "video plays at 75%":"videoView75","video plays at 95%":"videoView95",
+          "video plays at 100%":"videoView100","thruplays":"videoView100",
+          "average play time":"avgPlayTime","avg. play time per video play":"avgPlayTime",
+          "outbound ctr":"outboundCTR","outbound clicks ctr":"outboundCTR",
+          "adds to cart":"addToCart","add to cart":"addToCart",
+          "checkouts initiated":"initCheckout","initiate checkout":"initCheckout",
+          "frequency":"frequency",
+        };
+        headers.forEach((h,i)=>{ const key=headerMap[h]; if(key&&values[i]) mapped[key]=values[i]; });
+        return Object.keys(mapped).length > 0 ? mapped : null;
+      };
+
+      const handleAnalyse = async () => {
+        if (!apiKey) { setError("Please enter your Anthropic API key in the header."); return; }
+        let finalMetrics = {...metrics};
+        if (inputMode==="paste"||inputMode==="csv") {
+          const parsed = parseCSVOrPaste(pasteText);
+          if (parsed) finalMetrics = {...finalMetrics,...parsed};
+          else if (inputMode==="csv") { setError("Couldn't parse CSV. Make sure you paste with headers in the first row."); return; }
+        }
+        if (!finalMetrics.adName?.trim()) { setError("Please enter an ad name."); return; }
+        setLoading(true); setError(""); setResult(null);
+        try {
+          const analysis = await analyseCreative({metrics:finalMetrics, brandContext:client?.brandContext||"", imageBase64, imageMime, apiKey});
+          const saved = {id:uid(), adName:finalMetrics.adName, date:new Date().toLocaleDateString("en-GB"), metrics:finalMetrics, analysis, imagePreview};
+          setSavedAnalyses(prev=>{
+            const updated=[saved,...prev];
+            return updated;
+          });
+          setResult({...saved});
+        } catch(e) { setError("Analysis failed: "+e.message); }
+        setLoading(false);
+      };
+
+      const scoreColor = s => {
+        const n=parseInt(s);
+        if(n>=8)return"text-green-600"; if(n>=6)return"text-yellow-600"; return"text-red-500";
+      };
+
+      const priorityColor = p => ({High:"bg-red-50 text-red-600 border-red-200",Medium:"bg-yellow-50 text-yellow-600 border-yellow-200",Low:"bg-gray-50 text-gray-500 border-gray-200"}[p]||"bg-gray-50 text-gray-500 border-gray-200");
+
+      const AnalysisDisplay = ({data}) => {
+        const {analysis, adName, date, metrics:m, imagePreview:ip} = data;
+        return <div className="space-y-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="font-bold text-gray-900 text-lg">{adName}</p>
+              <p className="text-xs text-gray-400">{date}</p>
+            </div>
+            <div className="text-center">
+              <p className={`text-4xl font-black ${scoreColor(analysis.overallScore)}`}>{analysis.overallScore}<span className="text-lg text-gray-400">/10</span></p>
+              <p className="text-xs text-gray-400">Overall Score</p>
+            </div>
+          </div>
+
+          {ip&&<img src={ip} alt="Creative" className="w-full max-h-48 object-contain rounded-xl border border-gray-200 bg-gray-50"/>}
+
+          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+            <p className="text-xs font-bold text-indigo-500 uppercase tracking-widest mb-1">Summary</p>
+            <p className="text-sm text-gray-700">{analysis.summary}</p>
+          </div>
+
+          {analysis.creativeNotes&&<div className="bg-purple-50 border border-purple-100 rounded-xl p-4">
+            <p className="text-xs font-bold text-purple-500 uppercase tracking-widest mb-1">Visual Analysis</p>
+            <p className="text-sm text-gray-700">{analysis.creativeNotes}</p>
+          </div>}
+
+          {Object.keys(m).filter(k=>k!=="adName"&&m[k]).length>0&&<div className="bg-gray-50 rounded-xl p-4">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Key Metrics</p>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.entries(m).filter(([k,v])=>k!=="adName"&&v).map(([k,v])=>{
+                const field=METRIC_FIELDS.find(f=>f.key===k);
+                return <div key={k} className="bg-white rounded-lg p-2 border border-gray-200">
+                  <p className="text-xs text-gray-400">{field?.label||k}</p>
+                  <p className="text-sm font-bold text-gray-800">{v}</p>
+                </div>;
+              })}
+            </div>
+          </div>}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-bold text-green-600 uppercase tracking-widest mb-2">✓ Strengths</p>
+              <div className="space-y-2">{analysis.strengths?.map((s,i)=><div key={i} className="bg-green-50 border border-green-100 rounded-xl p-3"><p className="text-xs font-bold text-green-700">{s.title}</p><p className="text-xs text-gray-600 mt-0.5">{s.detail}</p></div>)}</div>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-red-500 uppercase tracking-widest mb-2">✗ Weaknesses</p>
+              <div className="space-y-2">{analysis.weaknesses?.map((w,i)=><div key={i} className="bg-red-50 border border-red-100 rounded-xl p-3"><p className="text-xs font-bold text-red-600">{w.title}</p><p className="text-xs text-gray-600 mt-0.5">{w.detail}</p></div>)}</div>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-bold text-indigo-500 uppercase tracking-widest mb-2">→ Suggested Iterations</p>
+            <div className="space-y-2">{analysis.iterations?.map((it,i)=><div key={i} className="bg-white border border-gray-200 rounded-xl p-3 flex items-start gap-3">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border flex-shrink-0 mt-0.5 ${priorityColor(it.priority)}`}>{it.priority}</span>
+              <div><p className="text-xs font-bold text-gray-800">{it.title}</p><p className="text-xs text-gray-500 mt-0.5">{it.detail}</p></div>
+            </div>)}</div>
+          </div>
+
+          <div>
+            <p className="text-xs font-bold text-purple-500 uppercase tracking-widest mb-2">💡 New Angle Ideas</p>
+            <div className="space-y-2">{analysis.newAngles?.map((a,i)=><div key={i} className="bg-purple-50 border border-purple-100 rounded-xl p-3"><p className="text-xs font-bold text-purple-700">{a.title}</p><p className="text-xs text-indigo-600 italic mt-0.5">"{a.hook}"</p><p className="text-xs text-gray-500 mt-1">{a.rationale}</p></div>)}</div>
+          </div>
+        </div>;
+      };
+
+      return <div className="space-y-4">
+        {/* Saved analyses list */}
+        {savedAnalyses.length>0&&!result&&<div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <p className="text-sm font-semibold text-gray-800">Previous Analyses</p>
+            <button onClick={()=>setResult(null)} className="text-xs text-indigo-500 hover:underline">+ New Analysis</button>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {savedAnalyses.map(a=><div key={a.id} className="px-4 py-3 flex items-center gap-3 hover:bg-gray-50 cursor-pointer" onClick={()=>setViewingAnalysis(a)}>
+              <div className="flex-1"><p className="text-sm font-medium text-gray-800">{a.adName}</p><p className="text-xs text-gray-400">{a.date}</p></div>
+              <span className={`text-lg font-black ${scoreColor(a.analysis.overallScore)}`}>{a.analysis.overallScore}/10</span>
+              <span className="text-xs text-indigo-500 hover:underline">View →</span>
+            </div>)}
+          </div>
+        </div>}
+
+        {/* Input form */}
+        {!result&&<div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+          <p className="font-semibold text-gray-800">Analyse a Creative</p>
+
+          {/* Input mode */}
+          <div className="flex gap-2">
+            {[["manual","✏️ Manual"],["paste","📋 Paste Data"],["csv","📊 CSV"]].map(([m,l])=><button key={m} onClick={()=>{setInputMode(m);setError("");}} className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${inputMode===m?"border-indigo-500 bg-indigo-50 text-indigo-700":"border-gray-200 text-gray-500 hover:bg-gray-50"}`}>{l}</button>)}
+          </div>
+
+          {/* Ad name always shown */}
+          <Field label="Ad Name *"><Input value={metrics.adName||""} onChange={v=>setMetric("adName",v)} placeholder="e.g. Katto — Unboxing UGC v3"/></Field>
+
+          {/* Manual entry */}
+          {inputMode==="manual"&&<div className="grid grid-cols-2 gap-3">
+            {METRIC_FIELDS.filter(f=>f.key!=="adName").map(f=><Field key={f.key} label={f.label}>
+              <Input value={metrics[f.key]||""} onChange={v=>setMetric(f.key,v)} placeholder="—"/>
+            </Field>)}
+          </div>}
+
+          {/* Paste / CSV */}
+          {(inputMode==="paste"||inputMode==="csv")&&<div className="space-y-2">
+            <Field label={inputMode==="csv"?"Paste CSV (with header row)":"Paste data (comma-separated or Meta export)"}>
+              <textarea value={pasteText} onChange={e=>setPasteText(e.target.value)} rows={6} placeholder={inputMode==="csv"
+                ?"Ad Name,Amount Spent,Impressions,CTR,Purchases,ROAS\nKatto UGC v3,£450,52000,2.4%,18,3.2"
+                :"Paste your Meta Ads Manager or Foreplay export here..."}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none font-mono"/>
+            </Field>
+            <p className="text-xs text-gray-400">Tip: Export from Meta Ads Manager → Columns → Export, then paste the CSV contents here.</p>
+          </div>}
+
+          {/* Image upload */}
+          <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center space-y-2">
+            <p className="text-xs font-bold text-gray-500 uppercase">Creative Image (optional)</p>
+            {imagePreview
+              ?<div className="relative"><img src={imagePreview} alt="Preview" className="max-h-40 mx-auto rounded-lg object-contain"/><button onClick={()=>{setImageBase64(null);setImageMime(null);setImagePreview(null);}} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">×</button></div>
+              :<div><p className="text-sm text-gray-400">Upload your static or image ad for visual analysis</p><button onClick={()=>imgRef.current.click()} className="mt-2 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold px-4 py-2 rounded-lg">Choose Image</button></div>}
+            <input ref={imgRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden"/>
+          </div>
+
+          {error&&<p className="text-sm text-red-500">{error}</p>}
+
+          <button onClick={handleAnalyse} disabled={loading} className={`w-full py-2.5 rounded-xl text-sm font-semibold transition ${loading?"bg-gray-100 text-gray-400 cursor-not-allowed":"bg-indigo-600 text-white hover:bg-indigo-700"}`}>
+            {loading?<span className="flex items-center justify-center gap-2"><Spinner/> Analysing...</span>:"✦ Analyse Creative"}
+          </button>
+        </div>}
+
+        {/* Result */}
+        {result&&<div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <button onClick={()=>setResult(null)} className="text-sm text-indigo-500 hover:underline">← New Analysis</button>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-5"><AnalysisDisplay data={result}/></div>
+        </div>}
+
+        {/* Viewing saved */}
+        <Modal show={!!viewingAnalysis} onClose={()=>setViewingAnalysis(null)} title={viewingAnalysis?.adName||"Analysis"} wide>
+          {viewingAnalysis&&<AnalysisDisplay data={viewingAnalysis}/>}
+        </Modal>
+      </div>;
+    }
+
+    // ── Auth ─────────────────────────────────────────────────────────────────
     function AuthScreen({onLogin}) {
       const [mode, setMode] = useState("login");
       const [name, setName] = useState("");
@@ -100,22 +398,22 @@
       const handleLogin = () => {
         setError("");
         const storage = loadStorage();
-        const users = storage.users || {};
+        const users = storage.users||{};
         const user = users[email.toLowerCase()];
         if (!user) { setError("No account found with that email."); return; }
-        if (user.password !== password) { setError("Incorrect password."); return; }
+        if (user.password!==password) { setError("Incorrect password."); return; }
         onLogin({email:email.toLowerCase(), name:user.name});
       };
 
       const handleRegister = () => {
         setError("");
         const storage = loadStorage();
-        const users = storage.users || {};
+        const users = storage.users||{};
         if (!name.trim()) { setError("Please enter your name."); return; }
         if (!email.includes("@")) { setError("Please enter a valid email."); return; }
-        if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+        if (password.length<6) { setError("Password must be at least 6 characters."); return; }
         if (users[email.toLowerCase()]) { setError("An account with this email already exists."); return; }
-        const updated = { ...storage, users: { ...users, [email.toLowerCase()]: { name:name.trim(), password, clients:[], apiKey:"" } } };
+        const updated = {...storage, users:{...users,[email.toLowerCase()]:{name:name.trim(),password,clients:[],apiKey:""}}};
         saveStorage(updated);
         onLogin({email:email.toLowerCase(), name:name.trim()});
       };
@@ -142,6 +440,7 @@
       </div>;
     }
 
+    // ── Onboarding ───────────────────────────────────────────────────────────
     function OnboardingWizard({onComplete, onCancel, apiKey}) {
       const [step, setStep] = useState(0);
       const [brandName, setBrandName] = useState("");
@@ -157,7 +456,7 @@
 
       const handleExtract = async () => {
         if (!researchText.trim()) { setExtractError("Please paste your research first."); return; }
-        if (!apiKey) { setExtractError("Please enter your API key on the welcome screen."); return; }
+        if (!apiKey) { setExtractError("Please enter your API key first."); return; }
         setExtracting(true); setExtractError("");
         try {
           const data = await extractPersonasAndAngles(researchText, brandName, apiKey);
@@ -168,33 +467,24 @@
         setExtracting(false);
       };
 
-      const addPersona = () => {
-        if(!newP.name.trim())return;
-        setPersonas(p=>[...p,{...newP,id:uid()}]);
-        setNewP({name:"",emoji:"🎯",color:"#E8F4FD",description:""});
-      };
-
+      const addPersona = () => { if(!newP.name.trim())return; setPersonas(p=>[...p,{...newP,id:uid()}]); setNewP({name:"",emoji:"🎯",color:"#E8F4FD",description:""}); };
       const addAngle = () => {
         if(!newA.name.trim()||!newA.personaName)return;
-        const persona=personas.find(p=>p.name===newA.personaName);
-        if(!persona)return;
+        const persona=personas.find(p=>p.name===newA.personaName); if(!persona)return;
         setAngles(a=>[...a,{id:uid(),personaId:persona.id,name:newA.name,hook:newA.hook}]);
         setNewA({personaName:newA.personaName,name:"",hook:""});
       };
 
       const stepLabels = ["Brand","Research","Personas","Angles"];
-
       return <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-white flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden">
           <div className="bg-indigo-600 px-6 py-4">
             <div className="flex items-center justify-between mb-3">
               <h1 className="text-white font-bold text-lg">Set Up New Client</h1>
-              {/* Cancel always available — fixes "no way back" bug */}
-              <button onClick={onCancel} className="text-indigo-300 hover:text-white text-sm">✕ Cancel</button>
+              <button onClick={onCancel} className="text-white bg-indigo-500 hover:bg-indigo-400 px-3 py-1 rounded-lg text-sm font-medium">✕ Cancel</button>
             </div>
             <div className="flex gap-2">{stepLabels.map((l,i)=><div key={l} className="flex-1 text-center"><div className={`h-1.5 rounded-full mb-1 ${i<=step?"bg-white":"bg-indigo-400"}`}/><span className={`text-xs ${i<=step?"text-white":"text-indigo-300"}`}>{l}</span></div>)}</div>
           </div>
-
           <div className="p-6 space-y-5">
             {step===0&&<>
               <div><h2 className="text-xl font-bold text-gray-900">What's the brand?</h2><p className="text-sm text-gray-500 mt-1">You can edit everything later.</p></div>
@@ -202,23 +492,17 @@
               <Field label="Brand Context"><textarea value={brandContext} onChange={e=>setBrandContext(e.target.value)} rows={4} placeholder="Positioning, USPs, tone, target market — feeds into every AI brief." className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"/></Field>
               <button onClick={()=>{if(brandName.trim())setStep(1);}} disabled={!brandName.trim()} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-semibold hover:bg-indigo-700 disabled:opacity-40">Continue →</button>
             </>}
-
             {step===1&&<>
               <div><h2 className="text-xl font-bold text-gray-900">Add your research</h2><p className="text-sm text-gray-500 mt-1">AI will extract personas and angles — or skip to add manually.</p></div>
-              <div className="flex gap-2">
-                {["paste","manual"].map(m=><button key={m} onClick={()=>setInputMethod(m)} className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${inputMethod===m?"border-indigo-500 bg-indigo-50 text-indigo-700":"border-gray-200 text-gray-500 hover:bg-gray-50"}`}>{m==="paste"?"📋 Paste Research":"✏️ Manual"}</button>)}
-              </div>
+              <div className="flex gap-2">{["paste","manual"].map(m=><button key={m} onClick={()=>setInputMethod(m)} className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${inputMethod===m?"border-indigo-500 bg-indigo-50 text-indigo-700":"border-gray-200 text-gray-500 hover:bg-gray-50"}`}>{m==="paste"?"📋 Paste Research":"✏️ Manual"}</button>)}</div>
               {inputMethod==="paste"&&<Field label="Paste research / review mining"><textarea value={researchText} onChange={e=>setResearchText(e.target.value)} rows={8} placeholder="Paste brand research, review mining, persona notes..." className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none font-mono"/></Field>}
               {inputMethod==="manual"&&<div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-sm text-indigo-700">You'll add personas and angles manually in the next steps.</div>}
               {extractError&&<p className="text-sm text-red-500">{extractError}</p>}
               <div className="flex gap-3">
                 <button onClick={()=>setStep(0)} className="border border-gray-200 px-4 py-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50">← Back</button>
-                {inputMethod==="manual"
-                  ?<button onClick={()=>setStep(2)} className="flex-1 bg-indigo-600 text-white py-2 rounded-lg font-semibold hover:bg-indigo-700">Continue →</button>
-                  :<button onClick={handleExtract} disabled={extracting||!researchText.trim()} className="flex-1 bg-indigo-600 text-white py-2 rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-40">{extracting?"Extracting...":"✦ Extract Personas & Angles →"}</button>}
+                {inputMethod==="manual"?<button onClick={()=>setStep(2)} className="flex-1 bg-indigo-600 text-white py-2 rounded-lg font-semibold hover:bg-indigo-700">Continue →</button>:<button onClick={handleExtract} disabled={extracting||!researchText.trim()} className="flex-1 bg-indigo-600 text-white py-2 rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-40">{extracting?"Extracting...":"✦ Extract Personas & Angles →"}</button>}
               </div>
             </>}
-
             {step===2&&<>
               <div><h2 className="text-xl font-bold text-gray-900">Review personas</h2><p className="text-sm text-gray-500 mt-1">Edit or add personas for {brandName}.</p></div>
               <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -244,7 +528,6 @@
                 <button onClick={()=>setStep(3)} disabled={personas.length===0} className="flex-1 bg-indigo-600 text-white py-2 rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-40">Continue →</button>
               </div>
             </>}
-
             {step===3&&<>
               <div><h2 className="text-xl font-bold text-gray-900">Review angles</h2><p className="text-sm text-gray-500 mt-1">Creative angles you'll test, each tied to a persona.</p></div>
               <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -272,6 +555,7 @@
       </div>;
     }
 
+    // ── Main App ─────────────────────────────────────────────────────────────
     function App() {
       const [currentUser, setCurrentUser] = useState(null);
       const [apiKey, setApiKey] = useState("");
@@ -303,7 +587,7 @@
         if (storage.session) {
           const user = storage.users?.[storage.session];
           if (user) {
-            setCurrentUser({email:storage.session, name:user.name});
+            setCurrentUser({email:storage.session,name:user.name});
             setClients(user.clients||[]);
             setApiKey(user.apiKey||"");
             if ((user.clients||[]).length>0) setActiveClientId(user.clients[0].id);
@@ -315,8 +599,8 @@
         if (!currentUser) return;
         const storage = loadStorage();
         const users = storage.users||{};
-        users[currentUser.email] = {...users[currentUser.email], clients:updatedClients, apiKey:updatedApiKey};
-        saveStorage({...storage, users});
+        users[currentUser.email] = {...users[currentUser.email],clients:updatedClients,apiKey:updatedApiKey};
+        saveStorage({...storage,users});
       }, [currentUser]);
 
       useEffect(() => { if (currentUser) persistUserData(clients, apiKey); }, [clients, apiKey]);
@@ -328,7 +612,7 @@
         setClients(userData.clients||[]);
         setApiKey(userData.apiKey||"");
         if ((userData.clients||[]).length>0) setActiveClientId(userData.clients[0].id);
-        saveStorage({...storage, session:user.email});
+        saveStorage({...storage,session:user.email});
       };
 
       const handleLogout = () => {
@@ -350,9 +634,9 @@
       const getAngle = id => angles.find(a=>a.id===id);
 
       const handleOnboardingComplete = ({brandName,brandContext,personas:ps,angles:as}) => {
-        const c = {id:uid(),brandName,brandContext,personas:ps,angles:as,tests:[]};
+        const c={id:uid(),brandName,brandContext,personas:ps,angles:as,tests:[],analyses:[]};
         setClients(cs=>[...cs,c]); setActiveClientId(c.id); setShowOnboarding(false); setActiveTab("Test Tracker");
-        if (ps.length>0) { setBbPersonaId(ps[0].id); setBbAngleId(as.find(a=>a.personaId===ps[0].id)?.id||null); }
+        if (ps.length>0){setBbPersonaId(ps[0].id);setBbAngleId(as.find(a=>a.personaId===ps[0].id)?.id||null);}
       };
 
       const filteredTests = useMemo(()=>tests.filter(t=>{
@@ -400,25 +684,18 @@
       const bbAngles = angles.filter(a=>a.personaId===bbPersonaId);
 
       if (!currentUser) return <AuthScreen onLogin={handleLogin}/>;
-
-      // Always pass onCancel so Cancel button is always visible
-      if (showOnboarding) return <OnboardingWizard
-        onComplete={handleOnboardingComplete}
-        onCancel={()=>setShowOnboarding(false)}
-        apiKey={apiKey}
-      />;
+      if (showOnboarding) return <OnboardingWizard onComplete={handleOnboardingComplete} onCancel={()=>setShowOnboarding(false)} apiKey={apiKey}/>;
 
       if (clients.length===0) return <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-white flex items-center justify-center p-4">
         <div className="text-center space-y-6 max-w-md">
           <div className="w-20 h-20 bg-indigo-600 rounded-2xl flex items-center justify-center text-4xl mx-auto shadow-lg">🎯</div>
           <div><h1 className="text-3xl font-bold text-gray-900">Welcome, {currentUser.name}!</h1><p className="text-gray-500 mt-2">Let's set up your first client.</p></div>
           <div className="bg-white rounded-xl border border-gray-200 p-4 text-left space-y-2">
-            <p className="text-xs font-bold text-indigo-500 uppercase tracking-wide">Anthropic API Key <span className="text-gray-400 font-normal normal-case">(optional — needed for AI briefs)</span></p>
+            <p className="text-xs font-bold text-indigo-500 uppercase tracking-wide">Anthropic API Key <span className="text-gray-400 font-normal normal-case">(optional — needed for AI features)</span></p>
             <div className="flex gap-2">
               <input type={showApiKey?"text":"password"} value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-ant-..." className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"/>
               <button onClick={()=>setShowApiKey(s=>!s)} className="text-xs text-gray-400 hover:text-gray-600 px-2">{showApiKey?"Hide":"Show"}</button>
             </div>
-            <p className="text-xs text-gray-400">Get yours at <a href="https://console.anthropic.com" target="_blank" className="text-indigo-500 underline">console.anthropic.com</a></p>
           </div>
           <button onClick={()=>setShowOnboarding(true)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 text-lg">+ Add Your First Client</button>
           <button onClick={handleLogout} className="text-sm text-gray-400 hover:underline">Sign out</button>
@@ -453,8 +730,8 @@
         {client&&<div className="max-w-7xl mx-auto px-4 pb-2"><div className="bg-white border border-gray-200 rounded-xl px-4 py-2 flex items-start gap-3"><span className="text-xs font-bold uppercase tracking-widest text-indigo-500 mt-1 flex-shrink-0">Brand</span><textarea value={client.brandContext} onChange={e=>updateClient({brandContext:e.target.value})} rows={2} className="flex-1 text-sm text-gray-700 focus:outline-none resize-none bg-transparent" placeholder="Brand context for AI brief generation..."/></div></div>}
 
         <div className="max-w-7xl mx-auto px-4 pt-1">
-          <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-            {TABS.map(tab=><button key={tab} onClick={()=>setActiveTab(tab)} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${activeTab===tab?"bg-white text-gray-900 shadow-sm":"text-gray-500 hover:text-gray-700"}`}>{tab}</button>)}
+          <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit overflow-x-auto">
+            {TABS.map(tab=><button key={tab} onClick={()=>setActiveTab(tab)} className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${activeTab===tab?"bg-white text-gray-900 shadow-sm":"text-gray-500 hover:text-gray-700"}`}>{tab}</button>)}
           </div>
         </div>
 
@@ -506,6 +783,8 @@
             {bbLoading&&<div className="bg-white border border-gray-200 rounded-xl p-5 flex items-center justify-center" style={{minHeight:300}}><div className="text-center space-y-3"><Spinner/><p className="text-sm text-gray-400">Building your brief...</p></div></div>}
             {bbBrief&&!bbLoading&&<div className="bg-white border border-gray-200 rounded-xl p-5 space-y-5"><div className="flex items-center justify-between"><p className="font-semibold text-gray-800">Generated Brief</p><div className="flex gap-2"><Pill label={bbFormat} colorClass="bg-gray-100 text-gray-600"/><Pill label={bbAwareness} colorClass={AWARENESS_COLORS[bbAwareness]||"bg-gray-100 text-gray-600"}/></div></div><BriefDisplay brief={bbBrief}/></div>}
           </div>}
+
+          {activeTab==="Creative Analysis"&&<CreativeAnalysisTab client={client} apiKey={apiKey}/>}
 
           {activeTab==="Angle Library"&&<div className="space-y-4">
             <div className="flex justify-end"><button onClick={()=>{setEditingAngle({id:null,personaId:personas[0]?.id||null,name:"",hook:""});setShowAngleModal(true);}} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700">+ Add Angle</button></div>
